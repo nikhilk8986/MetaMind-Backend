@@ -94,4 +94,42 @@ router.put("/update", auth, async (req, res) => {
   }
 });
 
+router.post('/differentiate', auth, async (req, res) => {
+  try {
+    const email = req.email;
+
+    const userUsage = await Usage.findOne(
+      { email },
+      { "appUsages.apps": 1, _id: 0 } // only fetch apps array
+    );
+
+    if (!userUsage || !userUsage.appUsages || !userUsage.appUsages.apps) {
+      console.log("No usage found for this user");
+      return res.status(404).json({
+        success: false,
+        message: "No app usage found for this user",
+        apps: []  // return empty array
+      });
+    }
+
+    const appsWithDuration = userUsage.appUsages.apps.map(a => ({
+      app: a.app,
+      duration: a.duration
+    }));
+
+    return res.status(200).json({
+      success: true,
+      apps: appsWithDuration
+    });
+
+  } catch (err) {
+    console.error("Error in /differentiate:", err.message);
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+      error: err.message
+    });
+  }
+});
+
 module.exports=router;
