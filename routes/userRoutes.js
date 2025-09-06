@@ -73,61 +73,80 @@ router.post('/signin', async(req, res)=>{
 router.put("/update", auth, async (req, res) => {
   try {
     const email = req.email;
-    const { app, session } = req.body;
+    const { app, session, date } = req.body;
 
-    if (!email || !app || !session) {
+    if (!email || !app || !session || !date) {
       return res.status(400).json({
         success: false,
-        message: "Email, app name, and session data are required"
+        message: "Email, app name, session data, and date are required"
       });
     }
 
-    // Always convert to array
     const sessionsToAdd = Array.isArray(session) ? session : [session];
-
-    // Calculate total duration from sessionsToAdd (in seconds)
     const newDuration = sessionsToAdd.reduce((acc, s) => {
       if (s.startTime && s.endTime) {
         const start = new Date(s.startTime);
         const end = new Date(s.endTime);
         if (!isNaN(start) && !isNaN(end)) {
-          acc += Math.max(0, (end - start) / 1000); // seconds
+          acc += Math.max(0, (end - start) / 1000);
         }
       }
       return acc;
     }, 0);
 
-    // First try updating existing app
-    let updatedUsage = await Usage.findOneAndUpdate(
-      { email, "appUsages.apps.app": app },
-      {
-        $push: { "appUsages.apps.$.sessions": { $each: sessionsToAdd } },
-        $inc: { "appUsages.apps.$.duration": newDuration } // increment duration
-      },
-      { new: true }
-    );
+    let usageDoc = await Usage.findOne({ email });
 
-    // If app doesn't exist, create it
-    if (!updatedUsage) {
-      updatedUsage = await Usage.findOneAndUpdate(
-        { email },
-        {
-          $push: {
-            "appUsages.apps": {
-              app,
-              duration: String(newDuration), // store as string
-              sessions: sessionsToAdd
-            }
-          }
-        },
-        { new: true, upsert: true }
-      );
+    if (!usageDoc) {
+      usageDoc = await Usage.create({
+        email,
+        appUsages: [{
+          date,
+          apps: [{
+            app,
+            duration: newDuration,
+            sessions: sessionsToAdd
+          }]
+        }]
+      });
+    } else {
+      // Find appUsage for the given date
+      let appUsage = usageDoc.appUsages.find(au => au.date === date);
+
+      if (!appUsage) {
+        // Add new date entry
+        usageDoc.appUsages.push({
+          date,
+          apps: [{
+            app,
+            duration: newDuration,
+            sessions: sessionsToAdd
+          }]
+        });
+      } else {
+        // Find the app in apps array
+        let appObj = appUsage.apps.find(a => a.app === app);
+
+        if (appObj) {
+          // Update existing app
+          appObj.sessions = appObj.sessions.concat(sessionsToAdd);
+          appObj.duration += newDuration;
+        } else {
+          // Add new app
+          appUsage.apps.push({
+            app,
+            duration: newDuration,
+            sessions: sessionsToAdd
+          });
+        }
+      }
+
+      await usageDoc.save();
     }
 
     return res.status(200).json({
       success: true,
       message: "Usage updated",
-      usage: updatedUsage
+      usage: usageDoc
     });
   } catch (err) {
     console.error("Update error:", err);
@@ -141,104 +160,95 @@ router.put("/update", auth, async (req, res) => {
 
 
 
-router.post('/differentiate', auth, async (req, res) => {
-  try {
-    const email = req.email;
-
-    const userUsage = await Usage.findOne(
-      { email },
-      { "appUsages.apps": 1, _id: 0 } // fetch only apps
-    );
-
-    if (!userUsage || !userUsage.appUsages || !userUsage.appUsages.apps) {
-      console.log("No usage found for this user");
-      return res.status(404).json({
-        success: false,
-        message: "No app usage found for this user",
-        apps: []
-      });
-    }
-
-    // Calculate duration from sessions
-    const appsWithDuration = userUsage.appUsages.apps.map(appData => {
-      let totalDurationMs = 0;
-
-      if (appData.sessions && appData.sessions.length > 0) {
-        appData.sessions.forEach(session => {
-          if (session.startTime && session.endTime) {
-            const start = new Date(session.startTime);
-            const end = new Date(session.endTime);
-            if (!isNaN(start) && !isNaN(end) && end > start) {
-              totalDurationMs += end - start;
-            }
-          }
-        });
-      }
-
-      // Convert ms → minutes
-      const totalMinutes = Math.floor(totalDurationMs / 60000);
-
-      return {
-        app: appData.app,
-        duration: `${totalMinutes} min`,
-        sessions: appData.sessions
-      };
-    });
-
-    return res.status(200).json({
-      success: true,
-      apps: appsWithDuration
-    });
-
-  } catch (err) {
-    console.error("Error in /differentiate:", err.message);
-    return res.status(500).json({
-      success: false,
-      message: "Internal server error",
-      error: err.message
-    });
-  }
-});
 
 
 //endpoint to get daily usages
 
 router.get("/getdurations", auth, async (req, res) => {
+  const email = req.email;
   try {
-    const email = req.email; 
-
-    const userUsage = await Usage.findOne(
-      { email },
-      { "appUsages.apps.app": 1, "appUsages.apps.duration": 1, _id: 0 }
-    );
-
-    if (!userUsage || !userUsage.appUsages || !userUsage.appUsages.apps) {
+    const usage = await Usage.findOne({ email });
+    if (!usage) {
       return res.status(404).json({
-        success: false,
-        message: "No app usage found for this user",
-        apps: []
+        message: "No usage data found"
       });
     }
+    const appUsages = usage.appUsages;
+    const result = [];
+    const currentDate = new Date();
 
-    const appsWithDuration = userUsage.appUsages.apps.map(a => ({
-      app: a.app,
-      duration: a.duration
-    }));
+    for (let i = 0; i < 7; i++) {
+      const date = new Date(currentDate);
+      date.setDate(currentDate.getDate() - i);
+      const dateString = date.toISOString().split('T')[0];
 
-    return res.status(200).json({
-      success: true,
-      apps: appsWithDuration
+      // Find usage for this date
+      const dayUsage = appUsages.find(appUsage => appUsage.date === dateString);
+
+      if (dayUsage) {
+        // Build app durations for this day
+        const dayDurations = {};
+        dayUsage.apps.forEach(app => {
+          dayDurations[app.app] = parseInt(app.duration);
+        });
+        result.push({
+          date: dateString,
+          durations: dayDurations
+        });
+      } else {
+        // No usage for this day
+        result.push({
+          date: dateString,
+          durations: {}
+        });
+      }
+    }
+
+    res.status(200).json({
+      message: "Success",
+      durations: result.reverse() // Optional: oldest to newest
     });
-
   } catch (err) {
-    console.error("Error in /get-durations:", err);
     res.status(500).json({
-      success: false,
-      message: "Internal server error",
-      error: err.message
+      message: "Server Error"
     });
   }
 });
 
+
+router.get('/getCurrentUsage', auth, async (req, res) => {
+    const email = req.email;
+    try {
+        const usage = await Usage.findOne({ email });
+        if (!usage) {
+            return res.status(404).json({
+                message: "No usage data found"
+            });
+        }
+        // Get today's date in YYYY-MM-DD format
+        const today = new Date();
+        const dateString = today.toISOString().split('T')[0];
+        const todayUsage = usage.appUsages.find(au => au.date === dateString);
+        if (!todayUsage || !todayUsage.apps) {
+            return res.status(404).json({
+                message: "No usage data found for today"
+            });
+        }
+        // Map to only app and duration
+        const appDurations = todayUsage.apps.map(app => ({
+            app: app.app,
+            duration: app.duration
+        }));
+
+        res.status(200).json({
+            message: "Success",
+            usage: appDurations
+        });
+    } catch (err) {
+        res.status(500).json({
+            message: "Server Error"
+        });
+    }
+});
 
 module.exports=router;
