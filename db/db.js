@@ -18,13 +18,21 @@ const usage = new Schema({
     apps: [
       {
         app: { type: String },
-        duration: { type: String },
-        startTime: { type: String },
-        endTime: { type: String }
+        duration: { type: String, default: "0" },
+        sessions: [
+          {
+            startTime: { type: String },
+            endTime: { type: String },
+            _id: false   // 🚀 prevent auto _id for each session
+          }
+        ],
+        _id: false       // optional: also prevent _id for each app
       }
     ]
   }
 });
+
+
 
 const User=mongoose.model("user",user);
 const Usage=mongoose.model("usage",usage);

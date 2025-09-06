@@ -70,29 +70,63 @@ router.post('/signin', async(req, res)=>{
     res.status(400).json({message: "Invalid credentials"});
 });
 
-
-//  Update user profile (protected)
+// Update user app usage (protected)
 router.put("/update", auth, async (req, res) => {
   try {
     const email = req.email;
-    const {appUsages } = req.body;
+    const { app, session } = req.body;
 
-    if (!email || !appUsages) {
-      return res.status(400).json({ message: "Email and appUsages required" });
+    if (!email || !app || !session) {
+      return res.status(400).json({
+        success: false,
+        message: "Email, app name, and session data are required"
+      });
     }
 
-    const updatedUsage = await Usage.findOneAndUpdate(
-      { email },
-      { $set: { appUsages } },
-      { new: true, upsert: true } // create if not exists
+    // Always convert to array
+    const sessionsToAdd = Array.isArray(session) ? session : [session];
+
+    // Try updating existing app
+    let updatedUsage = await Usage.findOneAndUpdate(
+      { email, "appUsages.apps.app": app },
+      {
+        $push: { "appUsages.apps.$.sessions": { $each: sessionsToAdd } }
+      },
+      { new: true }
     );
 
-    res.json({ message: "Usage updated", usage: updatedUsage });
+    // If app doesn't exist, create it
+    if (!updatedUsage) {
+      updatedUsage = await Usage.findOneAndUpdate(
+        { email },
+        {
+          $push: {
+            "appUsages.apps": {
+              app,
+              duration: "0",
+              sessions: sessionsToAdd
+            }
+          }
+        },
+        { new: true, upsert: true }
+      );
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Usage updated",
+      usage: updatedUsage
+    });
   } catch (err) {
     console.error("Update error:", err);
-    res.status(500).json({ message: "Server error" });
+    return res.status(500).json({
+      success: false,
+      message: "Server error",
+      error: err.message
+    });
   }
 });
+
 
 router.post('/differentiate', auth, async (req, res) => {
   try {
@@ -100,7 +134,7 @@ router.post('/differentiate', auth, async (req, res) => {
 
     const userUsage = await Usage.findOne(
       { email },
-      { "appUsages.apps": 1, _id: 0 } // only fetch apps array
+      { "appUsages.apps": 1, _id: 0 } // fetch only apps
     );
 
     if (!userUsage || !userUsage.appUsages || !userUsage.appUsages.apps) {
@@ -108,14 +142,35 @@ router.post('/differentiate', auth, async (req, res) => {
       return res.status(404).json({
         success: false,
         message: "No app usage found for this user",
-        apps: []  // return empty array
+        apps: []
       });
     }
 
-    const appsWithDuration = userUsage.appUsages.apps.map(a => ({
-      app: a.app,
-      duration: a.duration
-    }));
+    // Calculate duration from sessions
+    const appsWithDuration = userUsage.appUsages.apps.map(appData => {
+      let totalDurationMs = 0;
+
+      if (appData.sessions && appData.sessions.length > 0) {
+        appData.sessions.forEach(session => {
+          if (session.startTime && session.endTime) {
+            const start = new Date(session.startTime);
+            const end = new Date(session.endTime);
+            if (!isNaN(start) && !isNaN(end) && end > start) {
+              totalDurationMs += end - start;
+            }
+          }
+        });
+      }
+
+      // Convert ms → minutes
+      const totalMinutes = Math.floor(totalDurationMs / 60000);
+
+      return {
+        app: appData.app,
+        duration: `${totalMinutes} min`,
+        sessions: appData.sessions
+      };
+    });
 
     return res.status(200).json({
       success: true,
@@ -131,5 +186,6 @@ router.post('/differentiate', auth, async (req, res) => {
     });
   }
 });
+
 
 module.exports=router;
