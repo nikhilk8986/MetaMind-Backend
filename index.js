@@ -8,7 +8,7 @@ const userRoutes=require('./routes/userRoutes');
 // Environment variables with fallbacks
 const PORT = process.env.PORT || 3000;
 const FRONTEND_URL = process.env.FRONTEND_URL;
-const MONGO_URI = process.env.MONGO_URI;
+const MONGO_URI = "mongodb://localhost:27017/metamind";
 
 app.use(express.json());
 
@@ -18,6 +18,14 @@ app.get('/test', (req, res)=>{
 });
 app.use('/user',userRoutes);
 
-
+mongoose.connect(MONGO_URI).then(()=>{
+    console.log('MongoDB connected successfully');
+    app.listen(PORT, () => {
+        console.log(`Server started on port ${PORT}`);
+        console.log(`Frontend URL: ${FRONTEND_URL}`);
+    });
+}).catch((err) => {
+    console.log("Failed to connect to MongoDB:", err.message);
+});
 
 app.listen(3000);

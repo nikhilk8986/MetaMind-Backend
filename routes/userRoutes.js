@@ -31,26 +31,44 @@ router.post('/signup',async(req,res)=>{
     const latitude = req.headers.latitude;
     const longitude = req.headers.longitude;
     if(password!=confirmPassword){
-        res.status(500).json({
-            message:"Incorect Password Match"
+        return res.status(500).json({
+            message:"Incorrect Password Match"
         });
-            
     }
-    else{
-        try {
-            const hashedPassword = await bcrypt.hash(password, BCRYPT_ROUNDS);
-            await User.create({
-                email,name, password: hashedPassword, location:{latitude: latitude, longitude: longitude}
-            });
-           
-            res.status(200).json({
-                message:"YOU ARE SIGNED UP"
-            })
-        }
-        catch{
-            
-            console.log("failed to create ID 2");
-            res.status(500).json({message: "Failed to create ID."});
-        }
+    try {
+        const hashedPassword = await bcrypt.hash(password, BCRYPT_ROUNDS);
+        await User.create({
+            email,
+            name,
+            password: hashedPassword,
+            location: {latitude, longitude}
+        });
+        res.status(200).json({
+            message:"YOU ARE SIGNED UP"
+        });
     }
-})
+    catch (err) {
+        console.log("failed to create ID 2", err);
+        res.status(500).json({message: "Failed to create ID."});
+    }
+});
+
+router.post('/signin', async(req, res)=>{
+    const {email, password} = req.body;
+    const user = await User.findOne({email});
+    if(!user){
+        return res.status(400).json({message: "User not found"});
+    }
+    if(!user.password){
+        return res.status(400).json({message: "User password not set"});
+    }
+    const isMatch = await bcrypt.compare(password, user.password);
+    if(isMatch){
+        const token = jwt.sign({email: user.email}, JWT_SECRET);
+        return res.status(200).json({message: "Login successful", token});
+    }
+    res.status(400).json({message: "Invalid credentials"});
+});
+
+
+module.exports=router;
