@@ -1,10 +1,9 @@
-const express=require("express");
-const app=express();
-const jwt=require("jsonwebtoken")
-const mongoose = require("mongoose")
-// require('dotenv').config();
+const express = require("express");
+const app = express();
+const jwt = require("jsonwebtoken");
+const mongoose = require("mongoose");
 const cors = require("cors");
-const userRoutes=require('./routes/userRoutes');
+const userRoutes = require('./routes/userRoutes');
 // Environment variables with fallbacks
 const PORT = process.env.PORT || 3000;
 const FRONTEND_URL = process.env.FRONTEND_URL;
@@ -12,6 +11,8 @@ const MONGO_URI = "mongodb+srv://sayan2003dev:admin@cluster0.fuvcpma.mongodb.net
 
 app.use(express.json());
 
+// Allow all origins
+app.use(cors());
 
 app.get('/test', (req, res)=>{
     res.json('sayan')
