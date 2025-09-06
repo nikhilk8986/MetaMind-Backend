@@ -70,7 +70,6 @@ router.post('/signin', async(req, res)=>{
     res.status(400).json({message: "Invalid credentials"});
 });
 
-// Update user app usage (protected)
 router.put("/update", auth, async (req, res) => {
   try {
     const email = req.email;
@@ -86,11 +85,24 @@ router.put("/update", auth, async (req, res) => {
     // Always convert to array
     const sessionsToAdd = Array.isArray(session) ? session : [session];
 
-    // Try updating existing app
+    // Calculate total duration from sessionsToAdd (in seconds)
+    const newDuration = sessionsToAdd.reduce((acc, s) => {
+      if (s.startTime && s.endTime) {
+        const start = new Date(s.startTime);
+        const end = new Date(s.endTime);
+        if (!isNaN(start) && !isNaN(end)) {
+          acc += Math.max(0, (end - start) / 1000); // seconds
+        }
+      }
+      return acc;
+    }, 0);
+
+    // First try updating existing app
     let updatedUsage = await Usage.findOneAndUpdate(
       { email, "appUsages.apps.app": app },
       {
-        $push: { "appUsages.apps.$.sessions": { $each: sessionsToAdd } }
+        $push: { "appUsages.apps.$.sessions": { $each: sessionsToAdd } },
+        $inc: { "appUsages.apps.$.duration": newDuration } // increment duration
       },
       { new: true }
     );
@@ -103,7 +115,7 @@ router.put("/update", auth, async (req, res) => {
           $push: {
             "appUsages.apps": {
               app,
-              duration: "0",
+              duration: String(newDuration), // store as string
               sessions: sessionsToAdd
             }
           }
@@ -126,6 +138,7 @@ router.put("/update", auth, async (req, res) => {
     });
   }
 });
+
 
 
 router.post('/differentiate', auth, async (req, res) => {
@@ -180,6 +193,46 @@ router.post('/differentiate', auth, async (req, res) => {
   } catch (err) {
     console.error("Error in /differentiate:", err.message);
     return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+      error: err.message
+    });
+  }
+});
+
+
+//endpoint to get daily usages
+
+router.get("/getdurations", auth, async (req, res) => {
+  try {
+    const email = req.email; 
+
+    const userUsage = await Usage.findOne(
+      { email },
+      { "appUsages.apps.app": 1, "appUsages.apps.duration": 1, _id: 0 }
+    );
+
+    if (!userUsage || !userUsage.appUsages || !userUsage.appUsages.apps) {
+      return res.status(404).json({
+        success: false,
+        message: "No app usage found for this user",
+        apps: []
+      });
+    }
+
+    const appsWithDuration = userUsage.appUsages.apps.map(a => ({
+      app: a.app,
+      duration: a.duration
+    }));
+
+    return res.status(200).json({
+      success: true,
+      apps: appsWithDuration
+    });
+
+  } catch (err) {
+    console.error("Error in /get-durations:", err);
+    res.status(500).json({
       success: false,
       message: "Internal server error",
       error: err.message

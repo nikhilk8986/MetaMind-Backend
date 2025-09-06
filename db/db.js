@@ -18,7 +18,7 @@ const usage = new Schema({
     apps: [
       {
         app: { type: String },
-        duration: { type: String, default: "0" },
+        duration: { type: Number, default: 0 },
         sessions: [
           {
             startTime: { type: String },
@@ -31,6 +31,7 @@ const usage = new Schema({
     ]
   }
 });
+
 
 
 
