@@ -71,4 +71,27 @@ router.post('/signin', async(req, res)=>{
 });
 
 
+//  Update user profile (protected)
+router.put("/update", auth, async (req, res) => {
+  try {
+    const email = req.email;
+    const {appUsages } = req.body;
+
+    if (!email || !appUsages) {
+      return res.status(400).json({ message: "Email and appUsages required" });
+    }
+
+    const updatedUsage = await Usage.findOneAndUpdate(
+      { email },
+      { $set: { appUsages } },
+      { new: true, upsert: true } // create if not exists
+    );
+
+    res.json({ message: "Usage updated", usage: updatedUsage });
+  } catch (err) {
+    console.error("Update error:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
 module.exports=router;

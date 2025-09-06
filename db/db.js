@@ -11,19 +11,20 @@ const user=new Schema({
     location:{latitude:String,longitude:String}
 })
 
-const usage=new Schema({
-    email:{type:String,unique:true},
-    appUsages:{
-        date:{String},
-        apps:[{
-            app:{String},
-            duration:{String},
-            startTime:{String},
-            endTime:{String}
-        }]
-    }
-
-})
+const usage = new Schema({
+  email: { type: String, unique: true },
+  appUsages: {
+    date: { type: String },
+    apps: [
+      {
+        app: { type: String },
+        duration: { type: String },
+        startTime: { type: String },
+        endTime: { type: String }
+      }
+    ]
+  }
+});
 
 const User=mongoose.model("user",user);
 const Usage=mongoose.model("usage",usage);
